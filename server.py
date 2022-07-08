@@ -3,13 +3,20 @@ import urllib.request
 import urllib.parse
 import json
 import re
+import os 
 
-ENV_FILE = "api_key.env"
+ENV_FILE = ".env"
 YT_API_KEY = None
-with open(ENV_FILE, "r") as f:
-    line = f.readline().split("=")
-    if line[0].strip() == "YT_API_KEY":
-        YT_API_KEY = line[1].strip()
+DEBUG = False
+if "YT_API_KEY" in os.environ:
+    YT_API_KEY = os.environ["YT_API_KEY"]
+else:
+    DEBUG = True
+
+    with open(ENV_FILE, "r") as f:
+        line = f.readline().split("=")
+        if line[0].strip() == "YT_API_KEY":
+            YT_API_KEY = line[1].strip()
 
 def get_videos_infos(video_ids):
     """
@@ -24,7 +31,10 @@ def get_videos_infos(video_ids):
 class HTTPRequestHandler(server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self.path.startswith("/?v="):
-            self.send_response(200, "Path must start with '/?v='")
+            self.send_response(200)
+            self.end_headers()
+
+            self.wfile.write("Path must start with '/?v='".encode())
             return
         query = urllib.parse.parse_qs(self.path.split("?")[1])
         video_ids = query["v"][0].split(",")
@@ -32,9 +42,9 @@ class HTTPRequestHandler(server.SimpleHTTPRequestHandler):
             self.send_error(400, "Can only request 50 videos at once")
             return
 
-        regexp = r"[a-z0-9_-]{11}"
+        regexp = r"[A-Za-z0-9_-]{11}"
         for v in video_ids:
-            if not re.match(regexp, v, re.I):
+            if not re.match(regexp, v):
                 self.send_error(400, f'Not a valid youtube video id : "{v}"')
                 return
         
@@ -60,19 +70,23 @@ if __name__ == '__main__':
         print(f'Please set the YT_API_KEY environment variable in "{ENV_FILE}"')
         exit(1)
 
-    PORT = 8282
+
+    PORT = 8282 if "PORT" not in os.environ else int(os.environ["PORT"])
     server_address = ("", PORT)
 
     handler = HTTPRequestHandler
     print("Server listening on port :", PORT)
 
-    httpd = server.HTTPServer(server_address, handler)
 
     try:
-        # httpd.serve_forever()
-        server.test(HandlerClass=handler, port=PORT)
+        if DEBUG:
+            server.test(HandlerClass=handler, port=PORT)
+        else:
+            httpd = server.HTTPServer(server_address, handler) 
+            httpd.serve_forever()
     except KeyboardInterrupt:
         pass
-
-    # httpd.server_close()
+    
+    if not DEBUG:
+        httpd.server_close()
     print("Server stopped.")
